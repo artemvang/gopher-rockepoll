@@ -180,6 +180,8 @@ usage(const char *argv0)
     printf("usage: %s path "
            "[--addr addr] "
            "[--port port] "
+           "[--hostname hostname] "
+           "[--chroot] "
            "[--quiet]\n", argv0);
 }
 
