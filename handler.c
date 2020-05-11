@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -176,14 +177,11 @@ strip_request(char *raw_request)
     char *request_end;
     char *request = raw_request;
 
-    for (; *request == '/'; request++);
-    *strchr(request, '\r') = '\0';
+    for (; *request == '/' || isspace(*request); request++);
 
-    request_end = strrchr(request, '/');
-    if (request_end && request_end[1] == '\0') {
-        for (; *request_end == '/'; request_end--);
-        request_end[1] = '\0';
-    }
+    request_end = request + strlen(request) - 1;
+    for (; *request_end == '/' || isspace(*request_end); request_end--);
+    request_end[1] = '\0';
 
     if (*request == '\0') {
         request[0] = '.';
