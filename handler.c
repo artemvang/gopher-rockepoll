@@ -100,8 +100,9 @@ gather_file_meta(const char *target, struct file_meta *file_meta)
         sprintf(gophermap, "%s/gophermap", target);
 
         gophermap_fd = open(gophermap, O_LARGEFILE | O_RDONLY | O_NONBLOCK);
-        if (gophermap_fd &&
-                fstat(gophermap_fd, &gophermap_st_buf) &&
+        printf("%d\n", S_ISREG(gophermap_st_buf.st_mode));
+        if (gophermap_fd > 0 &&
+                !fstat(gophermap_fd, &gophermap_st_buf) &&
                 S_ISREG(gophermap_st_buf.st_mode))
         {
             fd = gophermap_fd;
