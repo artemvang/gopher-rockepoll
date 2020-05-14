@@ -10,6 +10,7 @@
 #define DEFAULT_CONF_ROOT_DIR     "."
 
 
+#define INDEX_FILE "gophermap"
 #define DEFAULT_MIMETYPE '9'
 
 

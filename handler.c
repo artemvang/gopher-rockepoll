@@ -15,6 +15,8 @@
 #include "config.h"
 
 
+#define MAX_TARGET_SIZE 1024 * 4
+#define ENDS(c) ((c) == '/' || (c) == '\0')
 #define LOG_MESSAGE_FORMAT "%s \"%s\" %d\n"
 
 
@@ -75,12 +77,68 @@ get_file_mimetype(const char *filename)
 }
 
 
+static char *
+remove_target_dots(char *url)
+{
+    char *src = url, *dst;
+
+    for (; *src && *src != '?'; ++src) {
+        if (*src == '/') {
+            if (src[1] == '/') {
+                break;
+            }
+            else if (src[1] == '.') {
+                if (ENDS(src[2])) {
+                    break;
+                }
+                else if (src[2] == '.' && ENDS(src[3])) {
+                    break;
+                }
+            }
+        }
+    }
+
+    dst = src;
+    while (*src && *src != '?') {
+        if (*src != '/') {
+            *dst++ = *src++;
+        }
+        else if (*++src == '/') {
+            ;
+        }
+        else if (*src != '.') {
+            *dst++ = '/';
+        }
+        else if (ENDS(src[1])) {
+            ++src;
+        }
+        else if (src[1] == '.' && ENDS(src[2])) {
+            src += 2;
+            if (dst == url) {
+                return NULL;
+            } else {
+                while (*--dst != '/' && dst > url);
+            }
+        } else {
+            *dst++ = '/';
+        }
+    }
+
+    if (dst == url) {
+        ++dst;
+    }
+    *dst = '\0';
+
+    return url;
+}
+
+
 static enum file_status
 gather_file_meta(const char *target, struct file_meta *file_meta)
 {
     int fd, gophermap_fd, is_dir;
     struct stat st_buf, gophermap_st_buf;
-    char gophermap[1024 + sizeof("/gophermap")] = {0};
+    char gophermap[MAX_TARGET_SIZE + sizeof("/" INDEX_FILE)] = {0};
 
     fd = open(target, O_LARGEFILE | O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
@@ -98,7 +156,7 @@ gather_file_meta(const char *target, struct file_meta *file_meta)
     }
 
     if (is_dir) {
-        sprintf(gophermap, "%s/gophermap", target);
+        sprintf(gophermap, "%s/" INDEX_FILE, target);
 
         gophermap_fd = open(gophermap, O_LARGEFILE | O_RDONLY | O_NONBLOCK);
         if (gophermap_fd > 0 &&
@@ -159,7 +217,7 @@ build_file_list(const char *dir_name, struct connection *conn)
 
 
 static void
-build_status_step(enum gopher_status st, struct connection *conn)
+build_status_step(enum gopher_status st, const char *target, struct connection *conn)
 {
     char *data;
     size_t size;
@@ -168,6 +226,8 @@ build_status_step(enum gopher_status st, struct connection *conn)
     size = sprintf(data, "3%s\t\t\t\n", gopher_status_str[st]);
 
     setup_write_io_step(&conn->steps, data, size, NULL);
+
+    log_new_connection(conn, target, st);
 }
 
 
@@ -212,6 +272,16 @@ build_response(struct connection *conn)
     enum gopher_status gopher_status = G_OK;
 
     target = strip_request(((struct read_meta *)conn->steps->meta)->data);
+    strcpy(target + 1, target);
+    *target = '/';
+
+    if (!(target = remove_target_dots(target))) {
+        build_status_step(G_BAD_REQUEST, target, conn);
+        return C_RUN;
+    }
+    if (*++target == '\0') {
+        target = ".";
+    }
 
     switch (gather_file_meta(target, &file_meta)) {
     case F_EXISTS:
@@ -224,24 +294,19 @@ build_response(struct connection *conn)
                 file_meta.fd, 0, file_meta.size, file_meta.size,
                 NULL);
         }
-        gopher_status = G_OK;
+
+        log_new_connection(conn, target, gopher_status);
         break;
     case F_FORBIDDEN:
-        gopher_status = G_FORBIDDEN;
+        build_status_step(G_FORBIDDEN, target, conn);
         break;
     case F_INTERNAL_ERROR:
-        gopher_status = G_INTERNAL_ERROR;
+        build_status_step(G_INTERNAL_ERROR, target, conn);
         break;
     case F_NOT_FOUND:
-        gopher_status = G_FILE_NOT_FOUND;
+        build_status_step(G_FILE_NOT_FOUND, target, conn);
         break;
     }
-
-    if (gopher_status != G_OK) {
-        build_status_step(gopher_status, conn);
-    }
-
-    log_new_connection(conn, target, gopher_status);
 
     return C_RUN;
 }
